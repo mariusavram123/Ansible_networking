@@ -1,0 +1,192 @@
+1. modify /etc/hosts
+add items
+192.168.122.71 S1
+192.168.122.72 S2
+192.168.122.73 S3
+192.168.122.74 S4
+192.168.122.75 S5
+
+2. create gns3hosts file
+[gns3_core]
+S1
+S2
+
+[gns3_access]
+S3
+S4
+S5
+
+3. Create ansible.cfg
+
+[defaults]
+inventory = ./gns3hosts
+host_key_checking = false
+timeout = 15
+
+4. Ad-hoc commands
+
+ad-hoc commands raw module
+a) ansible S1 -m  raw -a "show version" -u avram -k
+
+-m = module name
+-a = module arguments(commands)
+-u = specify username
+-k = ask the user for password
+
+b) ansible S1 -m raw -a "show ip int brief" -u avram -k
+
+c) ansible S1 -m raw -a "show run" -u avram -k
+
+d) raw module on gns3_core switches
+ansible gns3_core -i ./gns3hosts -m raw -a "show version" -u avram -k
+ansible gns3_core -i ./gns3hosts -m raw -a "show version" -u avram -k | grep flash0
+ansible gns3_core -i ./gns3hosts -m raw -a "show version" -u avram -k | grep 'CHANGED\|Software'
+ansible gns3_core -i ./gns3hosts -m raw -a "show version" -u avram -k | grep 'CHANGED\|Version'
+ansible gns3_core -i ./gns3hosts -m raw -a "show run" -u avram -k | grep 'username'
+
+e) raw module on all gns3hosts
+ansible all -i ./gns3hosts -m raw -a "show version" -u avram -k 
+ansible all -i ./gns3hosts -m raw -a "show version" -u avram -k | grep flash0
+ansible all -i ./gns3hosts -m raw -a "show version" -u avram -k | grep 'CHANGED\|Software'
+ansible all -i ./gns3hosts -m raw -a "show version" -u avram -k | grep 'CHANGED\|Version'
+ansible all -i ./gns3hosts -m raw -a "show run" -u avram -k | grep 'username'
+ansible all -i ./gns3hosts -m raw -a "show run" -u avram -k | grep 'CHANGED\|username'
+ansible all -i ./gns3hosts -m raw -a "show run | i user" -u avram -k | grep 'CHANGED\|username'
+ansible all -i ./gns3hosts -m raw -a "show run | i user" -u avram -k
+
+f) raw module more commands
+ansible gns3_core -i ./gns3hosts -m raw -a "show run" -u avram -k | grep 'username' > usernames.txt
+ansible all -i ./gns3hosts -m raw -a "show run" -u avram -k | grep 'username' > usernames.txt
+ansible gns3_core -i ./gns3hosts -m raw -a "show run" -u avram -k > shrun.txt
+ansible all -i ./gns3hosts -m raw -a "show run" -u avram -k > shrun.txt
+ansible gns3_core -i ./gns3hosts -m raw -a "show ver" -u avram -k > shver.txt
+ansible all -i ./gns3hosts -m raw -a "show ver" -u avram -k > shver.txt
+
+g) ansible for troubleshooting: arp, mac-address table, 
+ansible all -i gns3hosts -m raw -a "show arp" -u avram -k 
+ansible all -i gns3hosts -m raw -a "show arp" -u avram -k | grep 71
+ansible all -i gns3hosts -m raw -a "show arp" -u avram -k | grep 'CHANGED\|71'
+ansible all -i gns3hosts -m raw -a "show arp" -u avram -k | grep 'CHANGED\|.71'
+ansible all -i gns3hosts -m raw -a "show arp" -u avram -k | grep 'CHANGED\|\.71'
+ansible all -i gns3hosts -m raw -a "show mac address-table" -u avram -k 
+ansible all -i gns3hosts -m raw -a "show mac address-table" -u avram -k | grep 7a (host mac-address)
+ansible all -i gns3hosts -m raw -a "show mac address-table" -u avram -k | grep 'CHANGED\|f2f9'
+ansible all -i gns3hosts -m raw -a "show mac address-table" -u avram -k | grep 'CHANGED\|f2f9' > macsearch.txt
+
+5. Playbooks
+a) getarp1.yml
+---
+- name: Get ARP information
+  hosts: all
+  gather_facts: false
+
+
+  tasks:
+    - name: show arp
+      raw: "show arp"
+
+      register: print_output
+
+    -  debug: var=print_output.stdout_lines
+
+commands:
+#1) ansible-playbook getarp1.yml -u avram -k
+#2) Grep for MAC address: ansible-playbook getarp1.yml -u avram -k | grep 'ok:\|a2fb'
+#3) Grep for IP address: ansible-playbook getarp1.yml -u avram -k | grep 'ok:\|122\.206'
+
+b) getmac1.yml
+
+---
+- name: Get MAC address table information
+  hosts: all
+  gather_facts: false
+
+
+  tasks:
+    - name: show MAC address table
+      raw: "show mac address-table"
+
+      register: print_output
+
+    -  debug: var=print_output.stdout_lines
+
+commands:
+#1. ansible-playbook getmac1.yml -u avram -k
+#2. ansible-playbook getmac1.yml -u avram -k | grep 'ok:\|915d'
+
+c) show version- shver1.yml
+
+---
+- name: show version and other user level commands
+  hosts: all
+  gather_facts: false
+  connection: local
+
+  tasks:
+    - name: run multiple commands on remote nodes
+      ios_command: #module name
+        commands:
+          - show version
+          - show ip int brief
+
+
+      register: print_output
+
+    -  debug: var=print_output.stdout_lines
+
+
+# Commands to run: 
+#1) ansible-playbook shver1.yml -u avram -k
+
+d) getver2.yml- save output to files
+---
+- name: Backup show version and other user level commands
+  hosts: all
+  gather_facts: false
+  connection: local
+
+  tasks:
+    - name: run multiple commands on remote nodes
+      ios_command:
+        commands:
+          - show version
+
+      register: print_output
+
+    -  debug: var=print_output.stdout_lines
+
+    - name: save output to a file
+      copy: content="{{ print_output.stdout[0] }}" dest="./output/{{ inventory_hostname }}.txt"
+
+
+# Commands to run: 
+#1) ansible-playbook shver2.yml -u avram -k
+
+e) show running-config - save output to file
+
+---
+- name: Backup show run (enable mode commands)
+  hosts: all
+  gather_facts: false
+  connection: local
+
+  tasks:
+    - name: run enable level commands
+      ios_command:
+        authorize: yes
+        commands:
+          - show run
+
+      register: print_output
+
+    -  debug: var=print_output.stdout_lines
+
+    - name: save output to a file
+      copy: content="{{ print_output.stdout[0] }}" dest="./output/{{ inventory_hostname }}.txt"
+
+
+# Commands to run: 
+#1) ansible-playbook shver3.yml -u avram -k
+
+more Playbooks in files: myansible1.yml, myansible2.yml, myansible3.yml, myansible4.yml, 
+GNS3-Campus1.yml, GNS3-Campus2.yml, GNS3-Campus3.yml, GNS3-Campus4.yml
